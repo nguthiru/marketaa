@@ -1,0 +1,797 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Database: SQLite (default) or PostgreSQL
+// To switch to PostgreSQL:
+// 1. Change provider below to "postgresql"
+// 2. Update DATABASE_URL in .env
+// 3. Run: npx prisma migrate dev
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTH
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String
+  avatarUrl     String?
+  emailVerified Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret String?
+  timezone      String    @default("UTC")
+  role          String    @default("user") // user | admin
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  ownedProjects       Project[]           @relation("ProjectOwner")
+  memberships         ProjectMember[]
+  integrations        Integration[]
+  integrationConfigs  IntegrationConfig[]
+  templates           EmailTemplate[]
+  warmupAccounts      WarmupAccount[]
+  importJobs          ImportJob[]
+  calendarEvents      CalendarEvent[]
+  preferences         UserPreferences?
+  passwordResets      PasswordReset[]
+  emailVerifications  EmailVerification[]
+  sessions            UserSession[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  subscription        Subscription?
+  invoices            Invoice[]
+  teamInvites         TeamInvite[]        @relation("InvitedBy")
+  receivedInvites     TeamInvite[]        @relation("InvitedUser")
+  usageStats          UsageStats?
+}
+
+model UserPreferences {
+  id                    String   @id @default(cuid())
+  theme                 String   @default("light") // light | dark | system
+  emailNotifications    Boolean  @default(true)
+  weeklyDigest          Boolean  @default(true)
+  marketingEmails       Boolean  @default(false)
+  desktopNotifications  Boolean  @default(true)
+  language              String   @default("en")
+  dateFormat            String   @default("MM/DD/YYYY")
+  defaultProjectId      String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model UserSession {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  userAgent   String?
+  ipAddress   String?
+  lastActive  DateTime  @default(now())
+  expiresAt   DateTime
+  revoked     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+// ============================================
+// AUDIT & LOGGING
+// ============================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String   // create | update | delete | login | logout | etc
+  entityType  String   // user | project | lead | template | etc
+  entityId    String?
+  oldValue    String?  // JSON
+  newValue    String?  // JSON
+  metadata    String?  // JSON - additional context
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String    @id @default(cuid())
+  type      String    // team_invite | lead_reply | sequence_complete | payment | etc
+  title     String
+  message   String
+  link      String?
+  read      Boolean   @default(false)
+  readAt    DateTime?
+  metadata  String?   // JSON
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+// ============================================
+// BILLING (Paystack)
+// ============================================
+
+model Subscription {
+  id                  String    @id @default(cuid())
+  status              String    @default("inactive") // active | inactive | cancelled | past_due
+  plan                String    @default("free") // free | starter | pro | enterprise
+  paystackCustomerId  String?
+  paystackSubCode     String?   // Paystack subscription code
+  paystackPlanCode    String?
+  paystackEmailToken  String?   // Paystack email token for subscription management
+  currentPeriodStart  DateTime?
+  currentPeriodEnd    DateTime?
+  cancelAtPeriodEnd   Boolean   @default(false)
+  trialEndsAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  paystackRef       String   @unique
+  amount            Int      // Amount in kobo/cents
+  currency          String   @default("NGN")
+  status            String   // pending | paid | failed | refunded
+  description       String?
+  paidAt            DateTime?
+  metadata          String?  // JSON
+  createdAt         DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================
+// TEAM MANAGEMENT
+// ============================================
+
+model TeamInvite {
+  id        String    @id @default(cuid())
+  email     String
+  role      String    @default("member") // admin | member
+  token     String    @unique
+  status    String    @default("pending") // pending | accepted | declined | expired
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  invitedById String
+  invitedBy   User   @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  invitedUserId String?
+  invitedUser   User?   @relation("InvitedUser", fields: [invitedUserId], references: [id], onDelete: SetNull)
+
+  @@index([token])
+  @@index([projectId])
+  @@index([email])
+}
+
+// ============================================
+// PROJECT (Top-level container)
+// ============================================
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Owner
+  ownerId     String
+  owner       User     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Relations
+  members     ProjectMember[]
+  leads       Lead[]
+  plans       Plan[]
+  context     ProjectContext[]
+  templates   EmailTemplate[]
+  sequences   Sequence[]
+  importJobs  ImportJob[]
+  teamInvites TeamInvite[]
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  role      String   @default("member") // "admin" | "member"
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// Project-level context (knowledge base for AI)
+model ProjectContext {
+  id         String   @id @default(cuid())
+  key        String   // e.g., "industry", "target_audience", "messaging_tone"
+  value      String   // The actual content
+  source     String   @default("user") // "user" | "system"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+// ============================================
+// LEAD (within Project)
+// ============================================
+
+model Lead {
+  id           String   @id @default(cuid())
+  name         String
+  email        String?
+  phone        String?
+  role         String?
+  organization String?
+  linkedin     String?
+  website      String?
+  status       String   @default("not_contacted") // not_contacted | contacted | responded | follow_up_needed
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Project
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Relations
+  contextItems      LeadContext[]
+  actions           Action[]
+  score             LeadScore?
+  enrollments       SequenceEnrollment[]
+  calendarEvents    CalendarEvent[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([email])
+}
+
+model LeadContext {
+  id         String   @id @default(cuid())
+  key        String   // e.g., "recent_news", "company_funding", "tech_stack"
+  value      String
+  source     String   @default("research") // "research" | "user" | "linkedin" | "website"
+  confidence String   @default("likely") // "confirmed" | "likely" | "best_guess"
+  dismissed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model LeadScore {
+  id             String    @id @default(cuid())
+  score          Int       @default(0)     // 0-100
+  trend          String    @default("stable") // up | down | stable
+  breakdown      String?   // JSON: { engagement, fit, behavior, recency }
+  aiSummary      String?
+  lastAnalyzedAt DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  leadId String @unique
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// PLAN (Outreach Strategy within Project)
+// ============================================
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Cold Outreach", "Follow-up", "Re-engagement"
+  goal        String   // e.g., "book_demo", "get_feedback", "schedule_call"
+  channels    String   @default("[\"email\"]") // JSON array: ["email", "linkedin", "phone"]
+  tone        String   @default("professional") // professional | casual | formal
+  templateId  String?  // Optional default template
+  priorities  String?  // JSON array of priorities
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Relations
+  actions     Action[]
+
+  @@index([projectId])
+}
+
+// ============================================
+// ACTION (Outreach action for a Lead)
+// ============================================
+
+model Action {
+  id          String    @id @default(cuid())
+  type        String    // "email" | "linkedin" | "call" | "note"
+  status      String    @default("draft") // draft | ready | sent | failed
+  subject     String?
+  body        String
+  reasoning   String?   // AI's reasoning for this action
+  userEdited  Boolean   @default(false) // Whether user has edited the AI-generated content
+  sentAt      DateTime?
+  resendId    String?   // Resend email ID if sent
+  fromEmail   String?   // Sender email address
+  toEmail     String?   // Recipient email address
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  planId      String
+  plan        Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  feedback    ActionFeedback?
+  emailMessages EmailMessage[]
+
+  @@index([leadId])
+  @@index([planId])
+  @@index([status])
+}
+
+model ActionFeedback {
+  id        String   @id @default(cuid())
+  outcome   String   // "no_reply" | "replied" | "meeting_booked" | "not_interested" | "converted"
+  notes     String?
+  createdAt DateTime @default(now())
+
+  actionId  String   @unique
+  action    Action   @relation(fields: [actionId], references: [id], onDelete: Cascade)
+}
+
+model EmailMessage {
+  id          String    @id @default(cuid())
+  actionId    String
+  action      Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  direction   String    // "outbound" | "inbound"
+  subject     String?
+  body        String
+  senderName  String?   // For inbound: who replied
+  receivedAt  DateTime? // When reply was received
+  resendId    String?   // For outbound messages
+  externalId  String?   // External ID from Gmail/Outlook
+
+  createdAt   DateTime  @default(now())
+
+  @@index([actionId])
+  @@index([externalId])
+}
+
+// ============================================
+// INTEGRATIONS FRAMEWORK
+// ============================================
+
+model Integration {
+  id            String    @id @default(cuid())
+  type          String    // "email_gmail" | "email_outlook" | "crm_hubspot" | "crm_salesforce" | "calendar_google" | "calendar_outlook"
+  name          String
+  status        String    @default("disconnected") // disconnected | connected | error
+  credentials   String?   // Encrypted JSON (access_token, refresh_token, etc.)
+  settings      String?   // JSON settings
+  lastSyncAt    DateTime?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+model IntegrationConfig {
+  id            String   @id @default(cuid())
+  provider      String   // "google" | "microsoft" | "hubspot" | "salesforce"
+  clientId      String   // Encrypted
+  clientSecret  String   // Encrypted
+  redirectUri   String?
+  scopes        String?  // JSON array of OAuth scopes
+  isConfigured  Boolean  @default(false) // Whether the config is complete
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+// ============================================
+// EMAIL TEMPLATES
+// ============================================
+
+model EmailTemplate {
+  id            String    @id @default(cuid())
+  name          String
+  subject       String
+  body          String
+  category      String?   // "cold_outreach" | "follow_up" | "meeting_request" | etc
+  isShared      Boolean   @default(false)
+  sendCount     Int       @default(0)
+  replyCount    Int       @default(0)
+  meetingCount  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdById   String
+  createdBy     User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  projectId     String?
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  variants      TemplateVariant[]
+
+  @@index([createdById])
+  @@index([projectId])
+}
+
+model TemplateVariant {
+  id            String   @id @default(cuid())
+  name          String   // "A", "B", "Control"
+  subject       String
+  body          String
+  sendCount     Int      @default(0)
+  replyCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  templateId    String
+  template      EmailTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+}
+
+// ============================================
+// SEQUENCES (Automated Campaigns)
+// ============================================
+
+model Sequence {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  status        String    @default("draft") // draft | active | paused | completed
+  triggerType   String    @default("manual") // manual | lead_added | status_change
+  triggerConfig String?   // JSON config for trigger conditions
+
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  steps         SequenceStep[]
+  enrollments   SequenceEnrollment[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model SequenceStep {
+  id            String    @id @default(cuid())
+  order         Int
+  type          String    // "email" | "wait" | "condition"
+  subject       String?   // For email steps
+  body          String?   // For email steps
+  templateId    String?   // Optional template reference
+  delayDays     Int?      // For wait steps
+  delayHours    Int?
+  condition     String?   // JSON for conditional logic
+
+  sequenceId    String
+  sequence      Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  executions    StepExecution[]
+
+  @@index([sequenceId])
+}
+
+model SequenceEnrollment {
+  id            String    @id @default(cuid())
+  status        String    @default("active") // active | paused | completed | exited
+  currentStep   Int       @default(1)
+  nextStepAt    DateTime?
+  enrolledAt    DateTime  @default(now())
+  completedAt   DateTime?
+
+  sequenceId    String
+  sequence      Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  leadId        String
+  lead          Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  executions    StepExecution[]
+
+  @@unique([sequenceId, leadId])
+  @@index([nextStepAt])
+  @@index([status])
+}
+
+model StepExecution {
+  id            String    @id @default(cuid())
+  status        String    @default("pending") // pending | completed | skipped | failed
+  executedAt    DateTime?
+  result        String?   // JSON result data
+  errorMessage  String?
+
+  stepId        String
+  step          SequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  enrollmentId  String
+  enrollment    SequenceEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([status])
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model AnalyticsSnapshot {
+  id            String    @id @default(cuid())
+  period        String    // daily | weekly | monthly
+  date          DateTime
+  metrics       String    // JSON
+  projectId     String?
+  userId        String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([period, date, projectId, userId])
+  @@index([date])
+}
+
+// ============================================
+// BACKGROUND JOBS
+// ============================================
+
+model ScheduledJob {
+  id            String    @id @default(cuid())
+  type          String    // sequence_step | inbox_sync | analytics | warmup
+  status        String    @default("pending") // pending | running | completed | failed
+  scheduledFor  DateTime
+  startedAt     DateTime?
+  completedAt   DateTime?
+  payload       String?   // JSON
+  result        String?   // JSON
+  errorMessage  String?
+  retryCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  @@index([status, scheduledFor])
+  @@index([type])
+}
+
+// ============================================
+// EMAIL WARMUP
+// ============================================
+
+model WarmupAccount {
+  id            String    @id @default(cuid())
+  email         String
+  status        String    @default("warming") // warming | healthy | paused | at_risk
+  reputation    Int       @default(50) // 0-100
+  dailyLimit    Int       @default(10)
+  currentDaily  Int       @default(0) // Current day's email count
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activities    WarmupActivity[]
+
+  @@index([userId])
+}
+
+model WarmupActivity {
+  id            String    @id @default(cuid())
+  type          String    // sent | received | opened | clicked
+  timestamp     DateTime  @default(now())
+
+  accountId     String
+  account       WarmupAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, timestamp])
+}
+
+// ============================================
+// IMPORT JOBS
+// ============================================
+
+model ImportJob {
+  id            String    @id @default(cuid())
+  status        String    @default("pending") // pending | processing | completed | failed
+  fileName      String
+  fieldMapping  String    // JSON
+  totalRows     Int       @default(0)
+  processedRows Int       @default(0)
+  successCount  Int       @default(0)
+  errorCount    Int       @default(0)
+  errors        String?   // JSON array of errors
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+// ============================================
+// CALENDAR EVENTS
+// ============================================
+
+model CalendarEvent {
+  id            String    @id @default(cuid())
+  externalId    String?   // ID from Google/Outlook Calendar
+  title         String
+  description   String?
+  startTime     DateTime
+  endTime       DateTime
+  meetingLink   String?
+  status        String    @default("scheduled") // scheduled | completed | cancelled
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  leadId        String?
+  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([leadId])
+  @@index([startTime])
+}
+
+// ============================================
+// PLAN CONFIGURATION & USAGE
+// ============================================
+
+model PlanConfig {
+  id                  String    @id @default(cuid())
+  code                String    @unique // free | starter | pro | enterprise
+  name                String
+  description         String?
+
+  // Pricing (in kobo/cents)
+  monthlyPrice        Int       @default(0)
+  yearlyPrice         Int       @default(0)
+  currency            String    @default("NGN")
+
+  // Limits (-1 = unlimited)
+  maxProjects         Int       @default(1)
+  maxLeadsPerProject  Int       @default(100)
+  maxLeadsTotal       Int       @default(100)
+  maxEmailsPerMonth   Int       @default(50)
+  maxTeamMembers      Int       @default(1)
+  maxTemplates        Int       @default(5)
+  maxSequences        Int       @default(0)
+
+  // Feature flags
+  hasEmailSequences   Boolean   @default(false)
+  hasABTesting        Boolean   @default(false)
+  hasAdvancedAnalytics Boolean  @default(false)
+  hasCrmIntegrations  Boolean   @default(false)
+  hasEmailWarmup      Boolean   @default(false)
+  hasApiAccess        Boolean   @default(false)
+  hasWhiteLabel       Boolean   @default(false)
+  hasPrioritySupport  Boolean   @default(false)
+  hasDedicatedManager Boolean   @default(false)
+
+  // Display
+  displayOrder        Int       @default(0)
+  isPopular           Boolean   @default(false)
+  isActive            Boolean   @default(true)
+  features            String?   // JSON array of feature strings for display
+
+  // Paystack integration
+  paystackPlanCode    String?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model UsageStats {
+  id                  String    @id @default(cuid())
+
+  // Current counts (all-time for non-resetting limits)
+  projectCount        Int       @default(0)
+  leadCount           Int       @default(0)
+  templateCount       Int       @default(0)
+  sequenceCount       Int       @default(0)
+
+  // Monthly counts (reset each billing period)
+  emailsGeneratedThisMonth  Int       @default(0)
+  emailsSentThisMonth       Int       @default(0)
+
+  // Tracking
+  currentPeriodStart  DateTime  @default(now())
+  lastResetAt         DateTime  @default(now())
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
