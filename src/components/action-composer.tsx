@@ -39,6 +39,23 @@ interface Lead {
   organization: string | null;
 }
 
+interface TemplateVariant {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  isActive: boolean;
+}
+
+interface Template {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  category: string | null;
+  variants?: TemplateVariant[];
+}
+
 interface ActionComposerProps {
   lead: Lead;
   projectId: string;
@@ -62,7 +79,11 @@ export function ActionComposer({
   onActionCreated,
 }: ActionComposerProps) {
   const [step, setStep] = useState<"select" | "generating" | "review" | "feedback">("select");
+  const [mode, setMode] = useState<"ai" | "template">("ai");
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
   const [action, setAction] = useState<Action | null>(null);
   const [editedSubject, setEditedSubject] = useState("");
   const [editedBody, setEditedBody] = useState("");
@@ -71,10 +92,25 @@ export function ActionComposer({
   const [existingActions, setExistingActions] = useState<Action[]>([]);
   const [loadingActions, setLoadingActions] = useState(true);
 
-  // Load existing actions for this lead
+  // Load existing actions and templates for this lead
   useEffect(() => {
     fetchActions();
+    fetchTemplates();
   }, [lead.id]);
+
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch("/api/templates");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch templates:", error);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
 
   const fetchActions = async () => {
     try {
@@ -87,6 +123,102 @@ export function ActionComposer({
       console.error("Failed to fetch actions:", error);
     } finally {
       setLoadingActions(false);
+    }
+  };
+
+  // Valid template variables
+  const validVariables = [
+    "name", "firstname", "lastname", "email", "role", "company", "organization"
+  ];
+
+  // Check for invalid/typo variables in content
+  const findInvalidVariables = (content: string): string[] => {
+    const variablePattern = /\{\{(\w+)\}\}/gi;
+    const invalid: string[] = [];
+    let match;
+    while ((match = variablePattern.exec(content)) !== null) {
+      const variable = match[1].toLowerCase();
+      if (!validVariables.includes(variable)) {
+        invalid.push(match[0]);
+      }
+    }
+    return [...new Set(invalid)];
+  };
+
+  // Personalize template content with lead data
+  const personalizeContent = (content: string) => {
+    return content
+      .replace(/\{\{name\}\}/gi, lead.name || "there")
+      .replace(/\{\{firstName\}\}/gi, lead.name?.split(" ")[0] || "there")
+      .replace(/\{\{lastName\}\}/gi, lead.name?.split(" ").slice(1).join(" ") || "")
+      .replace(/\{\{email\}\}/gi, lead.email || "")
+      .replace(/\{\{role\}\}/gi, lead.role || "your role")
+      .replace(/\{\{company\}\}/gi, lead.organization || "your company")
+      .replace(/\{\{organization\}\}/gi, lead.organization || "your organization");
+  };
+
+  const handleUseTemplate = async () => {
+    if (!selectedTemplate) return;
+
+    setStep("generating");
+
+    // Check for active variants for A/B testing
+    const activeVariants = selectedTemplate.variants?.filter(v => v.isActive) || [];
+    let subject = selectedTemplate.subject;
+    let body = selectedTemplate.body;
+    let variantId: string | undefined;
+
+    if (activeVariants.length > 0) {
+      // Randomly select between original template and its variants
+      const options = [
+        { id: null, subject: selectedTemplate.subject, body: selectedTemplate.body },
+        ...activeVariants.map(v => ({ id: v.id, subject: v.subject, body: v.body })),
+      ];
+      const randomIndex = Math.floor(Math.random() * options.length);
+      const selected = options[randomIndex];
+      subject = selected.subject;
+      body = selected.body;
+      variantId = selected.id ?? undefined;
+    }
+
+    // Personalize the content
+    const personalizedSubject = personalizeContent(subject);
+    const personalizedBody = personalizeContent(body);
+
+    try {
+      // Create an action using the template
+      const res = await fetch(`/api/projects/${projectId}/leads/${lead.id}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "email",
+          subject: personalizedSubject,
+          body: personalizedBody,
+          templateId: selectedTemplate.id,
+          variantId,
+          reasoning: JSON.stringify({
+            source: "template",
+            templateId: selectedTemplate.id,
+            templateName: selectedTemplate.name,
+            ...(variantId && { variantId, abTest: true }),
+          }),
+        }),
+      });
+
+      if (res.ok) {
+        const newAction = await res.json();
+        setAction(newAction);
+        setEditedSubject(personalizedSubject);
+        setEditedBody(personalizedBody);
+        setStep("review");
+        fetchActions();
+      } else {
+        console.error("Failed to create action from template");
+        setStep("select");
+      }
+    } catch (error) {
+      console.error("Failed to create action from template:", error);
+      setStep("select");
     }
   };
 
@@ -276,54 +408,196 @@ export function ActionComposer({
                 </div>
               )}
 
-              {/* Select plan */}
-              <div>
-                <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
-                  {existingActions.length > 0 ? "New Outreach" : "Select a Plan"}
-                </h3>
-                {plans.length === 0 ? (
-                  <div className="text-center py-8 bg-[var(--bg-secondary)] rounded-lg">
-                    <p className="text-[var(--text-tertiary)] mb-2">No plans available</p>
-                    <p className="text-sm text-[var(--text-tertiary)]">
-                      Create a plan in the Plans tab first
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {plans.map((plan) => (
-                      <button
-                        key={plan.id}
-                        onClick={() => setSelectedPlan(plan)}
-                        className={`
-                          w-full text-left p-4 rounded-lg border-2 transition-all
-                          ${selectedPlan?.id === plan.id
-                            ? "border-[var(--accent-ai)] bg-amber-50/50"
-                            : "border-[var(--border-default)] hover:border-[var(--text-tertiary)] bg-[var(--bg-elevated)]"
-                          }
-                        `}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-medium text-[var(--text-primary)]">
-                              {plan.name}
-                            </h4>
-                            <p className="text-sm text-[var(--text-tertiary)]">
-                              {plan.goal.replace(/_/g, " ")} · {plan.tone}
-                            </p>
-                          </div>
-                          {selectedPlan?.id === plan.id && (
-                            <div className="w-6 h-6 rounded-full bg-[var(--accent-ai)] flex items-center justify-center">
-                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+              {/* Mode Toggle */}
+              <div className="flex gap-2 p-1 bg-[var(--bg-secondary)] rounded-lg">
+                <button
+                  onClick={() => { setMode("ai"); setSelectedTemplate(null); }}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    mode === "ai"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
+                  AI Generate
+                </button>
+                <button
+                  onClick={() => { setMode("template"); setSelectedPlan(null); }}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    mode === "template"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                  Use Template
+                </button>
               </div>
+
+              {/* AI Mode - Select plan */}
+              {mode === "ai" && (
+                <div>
+                  <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
+                    Select a Plan
+                  </h3>
+                  {plans.length === 0 ? (
+                    <div className="text-center py-8 bg-[var(--bg-secondary)] rounded-lg">
+                      <p className="text-[var(--text-tertiary)] mb-2">No plans available</p>
+                      <p className="text-sm text-[var(--text-tertiary)]">
+                        Create a plan in the Plans tab first
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {plans.map((plan) => (
+                        <button
+                          key={plan.id}
+                          onClick={() => setSelectedPlan(plan)}
+                          className={`
+                            w-full text-left p-4 rounded-lg border-2 transition-all
+                            ${selectedPlan?.id === plan.id
+                              ? "border-[var(--accent-ai)] bg-amber-50/50"
+                              : "border-[var(--border-default)] hover:border-[var(--text-tertiary)] bg-[var(--bg-elevated)]"
+                            }
+                          `}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-medium text-[var(--text-primary)]">
+                                {plan.name}
+                              </h4>
+                              <p className="text-sm text-[var(--text-tertiary)]">
+                                {plan.goal.replace(/_/g, " ")} · {plan.tone}
+                              </p>
+                            </div>
+                            {selectedPlan?.id === plan.id && (
+                              <div className="w-6 h-6 rounded-full bg-[var(--accent-ai)] flex items-center justify-center">
+                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Template Mode - Select template */}
+              {mode === "template" && (
+                <div>
+                  <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
+                    Select a Template
+                  </h3>
+                  {loadingTemplates ? (
+                    <div className="flex justify-center py-8">
+                      <div className="w-6 h-6 border-2 border-[var(--border-default)] border-t-[var(--accent-ai)] rounded-full animate-spin" />
+                    </div>
+                  ) : templates.length === 0 ? (
+                    <div className="text-center py-8 bg-[var(--bg-secondary)] rounded-lg">
+                      <p className="text-[var(--text-tertiary)] mb-2">No templates available</p>
+                      <p className="text-sm text-[var(--text-tertiary)]">
+                        Create templates in the Templates section
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 max-h-64 overflow-y-auto">
+                      {templates.map((template) => {
+                        const activeVariants = template.variants?.filter(v => v.isActive) || [];
+                        const hasAbTest = activeVariants.length > 0;
+                        return (
+                          <button
+                            key={template.id}
+                            onClick={() => setSelectedTemplate(template)}
+                            className={`
+                              w-full text-left p-4 rounded-lg border-2 transition-all
+                              ${selectedTemplate?.id === template.id
+                                ? "border-pink-500 bg-pink-50/50"
+                                : "border-[var(--border-default)] hover:border-[var(--text-tertiary)] bg-[var(--bg-elevated)]"
+                              }
+                            `}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-medium text-[var(--text-primary)] truncate">
+                                    {template.name}
+                                  </h4>
+                                  {hasAbTest && (
+                                    <span className="flex-shrink-0 text-xs px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded font-medium">
+                                      A/B
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm text-[var(--text-tertiary)] truncate">
+                                  {template.subject}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {template.category && (
+                                    <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">
+                                      {template.category.replace(/_/g, " ")}
+                                    </span>
+                                  )}
+                                  {hasAbTest && (
+                                    <span className="text-xs text-violet-600">
+                                      {activeVariants.length + 1} versions
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {selectedTemplate?.id === template.id && (
+                                <div className="w-6 h-6 rounded-full bg-pink-500 flex items-center justify-center ml-3">
+                                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedTemplate && (() => {
+                    const invalidVars = findInvalidVariables(
+                      selectedTemplate.subject + " " + selectedTemplate.body
+                    );
+                    return (
+                      <div className="mt-3 space-y-2">
+                        <div className="p-3 bg-slate-50 rounded-lg">
+                          <p className="text-xs text-slate-500 mb-1">Preview (personalized)</p>
+                          <p className="text-sm font-medium text-slate-700 truncate">
+                            {personalizeContent(selectedTemplate.subject)}
+                          </p>
+                        </div>
+                        {invalidVars.length > 0 && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              <div>
+                                <p className="text-sm font-medium text-amber-800">
+                                  Unrecognized variables
+                                </p>
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                  {invalidVars.join(", ")} won&apos;t be replaced. Valid: {"{{"}{validVariables.join("}}, {{")}{"}}"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 
@@ -426,16 +700,30 @@ export function ActionComposer({
                 <Button variant="ghost" onClick={onClose}>
                   Cancel
                 </Button>
-                <Button
-                  variant="default"
-                  disabled={!selectedPlan}
-                  onClick={handleGenerate}
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                  Generate Draft
-                </Button>
+                {mode === "ai" ? (
+                  <Button
+                    variant="default"
+                    disabled={!selectedPlan}
+                    onClick={handleGenerate}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                    Generate Draft
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    disabled={!selectedTemplate}
+                    onClick={handleUseTemplate}
+                    className="bg-pink-500 hover:bg-pink-600"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    </svg>
+                    Use Template
+                  </Button>
+                )}
               </>
             ) : (
               <>

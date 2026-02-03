@@ -1,8 +1,9 @@
-export type IntegrationProvider = "google" | "microsoft" | "hubspot" | "salesforce";
+export type IntegrationProvider = "google" | "microsoft" | "hubspot" | "salesforce" | "pipedrive";
 
 export type IntegrationType =
   | "crm_hubspot"
   | "crm_salesforce"
+  | "crm_pipedrive"
   | "email_gmail"
   | "email_outlook"
   | "calendar_google"
@@ -80,6 +81,18 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, IntegrationProvi
     },
     oauthUrl: "https://login.salesforce.com/services/oauth2/authorize",
     tokenUrl: "https://login.salesforce.com/services/oauth2/token",
+  },
+  pipedrive: {
+    provider: "pipedrive",
+    name: "Pipedrive",
+    description: "Sync persons, deals, and activities with Pipedrive",
+    icon: "pipedrive",
+    types: ["crm_pipedrive"],
+    scopes: {
+      crm: ["deals:full", "persons:full", "activities:full"],
+    },
+    oauthUrl: "https://oauth.pipedrive.com/oauth/authorize",
+    tokenUrl: "https://oauth.pipedrive.com/oauth/token",
   },
 };
 

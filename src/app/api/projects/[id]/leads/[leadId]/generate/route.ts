@@ -48,7 +48,8 @@ export async function POST(
   try {
     const { planId } = await req.json();
 
-    const result = await generateAction(leadId, planId);
+    // Pass userId to apply learned writing style
+    const result = await generateAction(leadId, planId, session.user.id);
 
     if (!result) {
       return NextResponse.json(

@@ -30,6 +30,12 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Onboarding
+  onboardingCompleted      Boolean  @default(false)
+  welcomeWizardCompleted   Boolean  @default(false)
+  productTourCompleted     Boolean  @default(false)
+  onboardingChecklistState String?  // JSON for checklist items
+
   // Relations
   ownedProjects       Project[]           @relation("ProjectOwner")
   memberships         ProjectMember[]
@@ -50,6 +56,11 @@ model User {
   teamInvites         TeamInvite[]        @relation("InvitedBy")
   receivedInvites     TeamInvite[]        @relation("InvitedUser")
   usageStats          UsageStats?
+
+  // New relations for 6 features
+  crmMappings         CRMMapping[]
+  writingStyle        UserWritingStyle?
+  editPatterns        EditPattern[]
 }
 
 model UserPreferences {
@@ -252,6 +263,9 @@ model Project {
   sequences   Sequence[]
   importJobs  ImportJob[]
   teamInvites TeamInvite[]
+
+  // Unsubscribe/suppression list
+  suppressions Suppression[]
 }
 
 model ProjectMember {
@@ -296,10 +310,13 @@ model Lead {
   organization String?
   linkedin     String?
   website      String?
-  status       String   @default("not_contacted") // not_contacted | contacted | responded | follow_up_needed
+  status       String   @default("not_contacted") // not_contacted | contacted | responded | follow_up_needed | not_interested
   notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Reply classification - latest classification for quick access
+  lastReplyClassification String?
 
   // Project
   projectId    String
@@ -311,6 +328,9 @@ model Lead {
   score             LeadScore?
   enrollments       SequenceEnrollment[]
   calendarEvents    CalendarEvent[]
+
+  // New relations
+  linkedInProfile   LinkedInProfile?
 
   @@index([projectId])
   @@index([status])
@@ -389,6 +409,19 @@ model Action {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Email tracking fields
+  openCount     Int       @default(0)
+  clickCount    Int       @default(0)
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
+
+  // AI style learning - original AI-generated body before user edits
+  originalBody  String?
+
+  // Template tracking - which template/variant was used
+  templateId    String?
+  variantId     String?
+
   // Relations
   leadId      String
   lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -398,6 +431,11 @@ model Action {
 
   feedback    ActionFeedback?
   emailMessages EmailMessage[]
+
+  // New relations
+  trackingEvents    EmailTrackingEvent[]
+  unsubscribeTokens UnsubscribeToken[]
+  editPatterns      EditPattern[]
 
   @@index([leadId])
   @@index([planId])
@@ -428,6 +466,9 @@ model EmailMessage {
   externalId  String?   // External ID from Gmail/Outlook
 
   createdAt   DateTime  @default(now())
+
+  // Reply classification
+  classification ReplyClassification?
 
   @@index([actionId])
   @@index([externalId])
@@ -507,6 +548,7 @@ model TemplateVariant {
   name          String   // "A", "B", "Control"
   subject       String
   body          String
+  isActive      Boolean  @default(true)
   sendCount     Int      @default(0)
   replyCount    Int      @default(0)
   createdAt     DateTime @default(now())
@@ -794,4 +836,193 @@ model UsageStats {
 
   userId              String    @unique
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// EMAIL TRACKING
+// ============================================
+
+model EmailTrackingEvent {
+  id          String    @id @default(cuid())
+  type        String    // "open" | "click"
+  actionId    String
+  action      Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  originalUrl String?   // For clicks only - the original URL before rewriting
+  trackingId  String    @unique // UUID for tracking pixel/link
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime  @default(now())
+
+  @@index([actionId])
+  @@index([trackingId])
+  @@index([timestamp])
+}
+
+// ============================================
+// REPLY CLASSIFICATION
+// ============================================
+
+model ReplyClassification {
+  id               String       @id @default(cuid())
+  emailMessageId   String       @unique
+  emailMessage     EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  classification   String       // "positive" | "negative" | "out_of_office" | "bounce" | "neutral" | "question"
+  confidence       Float        // 0.0 - 1.0
+  sentiment        Float?       // -1.0 to 1.0
+  isAutoReply      Boolean      @default(false)
+  requiresResponse Boolean      @default(true)
+  nextActionSuggestion String?
+  keyPhrases       String?      // JSON array of key phrases
+  createdAt        DateTime     @default(now())
+}
+
+// ============================================
+// UNSUBSCRIBE & SUPPRESSION
+// ============================================
+
+model Suppression {
+  id             String    @id @default(cuid())
+  email          String
+  reason         String    // "unsubscribe" | "bounce" | "complaint" | "manual"
+  source         String    // "one_click" | "link" | "manual" | "webhook"
+  projectId      String?   // Null = global suppression
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  originalLeadId String?   // Reference to the lead that unsubscribed
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([email, projectId])
+  @@index([email])
+  @@index([projectId])
+}
+
+model UnsubscribeToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  email     String
+  actionId  String
+  action    Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  used      Boolean   @default(false)
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+  @@index([email])
+}
+
+// ============================================
+// LINKEDIN INTEGRATION
+// ============================================
+
+model LinkedInProfile {
+  id               String   @id @default(cuid())
+  leadId           String   @unique
+  lead             Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  linkedinUrl      String
+  linkedinId       String?  // LinkedIn member ID if available
+  headline         String?
+  summary          String?
+  location         String?
+  industry         String?
+  connections      Int?
+  currentCompany   String?
+  currentTitle     String?
+  experience       String?  // JSON array of positions
+  education        String?  // JSON array
+  skills           String?  // JSON array
+  recentPosts      String?  // JSON array of recent activity
+  enrichedAt       DateTime @default(now())
+  enrichmentSource String   @default("manual") // "manual" | "api" | "scraper"
+  rawData          String?  // Full JSON response for future parsing
+
+  @@index([linkedinUrl])
+}
+
+// ============================================
+// CRM SYNC
+// ============================================
+
+model CRMMapping {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         String   // "hubspot" | "salesforce" | "pipedrive"
+  localEntityType  String   // "lead" | "action" | "project"
+  localEntityId    String
+  remoteEntityType String   // "contact" | "deal" | "activity" | "company"
+  remoteEntityId   String
+  lastSyncedAt     DateTime
+  syncDirection    String   @default("bidirectional") // "to_crm" | "from_crm" | "bidirectional"
+  syncStatus       String   @default("synced") // "synced" | "pending" | "error"
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([provider, localEntityType, localEntityId])
+  @@unique([provider, remoteEntityType, remoteEntityId])
+  @@index([userId])
+  @@index([syncStatus])
+}
+
+model CRMSyncLog {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // "hubspot" | "salesforce" | "pipedrive"
+  operation    String   // "create" | "update" | "delete"
+  direction    String   // "outbound" | "inbound"
+  entityType   String
+  entityId     String
+  payload      String?  // JSON
+  response     String?  // JSON
+  success      Boolean
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, provider])
+  @@index([createdAt])
+}
+
+// ============================================
+// AI WRITING STYLE LEARNING
+// ============================================
+
+model UserWritingStyle {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredTone       String?   // "formal" | "casual" | "professional" | "friendly"
+  averageEmailLength  Int?      // Words
+  preferredGreeting   String?   // Common greeting patterns
+  preferredSignoff    String?   // Common sign-off patterns
+  preferredPhrases    String?   // JSON array - phrases user frequently adds
+  avoidedPhrases      String?   // JSON array - phrases user frequently removes
+  formality           Float?    // 0-1 scale
+  directness          Float?    // 0-1 scale
+  warmth              Float?    // 0-1 scale
+  editSamplesCount    Int       @default(0)
+  lastAnalyzedAt      DateTime?
+  stylePromptAddition String?   // Generated addition to AI prompts
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model EditPattern {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionId       String
+  action         Action   @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  originalText   String
+  editedText     String
+  editType       String   // "addition" | "removal" | "replacement" | "restructure"
+  addedPhrases   String?  // JSON array
+  removedPhrases String?  // JSON array
+  toneChange     String?  // Direction of tone change
+  lengthChange   Int?     // Word count difference
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([actionId])
 }

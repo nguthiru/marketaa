@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { recordEditPattern } from "@/lib/ai/style-learning/analyzer";
 
 // GET /api/actions/[actionId] - Get action details
 export async function GET(
@@ -90,6 +91,27 @@ export async function PATCH(
 
   try {
     const { subject, body, status } = await request.json();
+
+    // If body is being changed, track the edit for style learning
+    if (body !== undefined && body !== action.body) {
+      // Get the original AI-generated body (either stored or current)
+      const originalBody = action.originalBody || action.body;
+
+      // Store original body if not already stored
+      if (!action.originalBody && !action.userEdited) {
+        await db.action.update({
+          where: { id: actionId },
+          data: { originalBody: action.body },
+        });
+      }
+
+      // Record edit pattern for style learning (async, don't block response)
+      if (originalBody) {
+        recordEditPattern(session.user.id, actionId, originalBody, body).catch(
+          (err) => console.error("Failed to record edit pattern:", err)
+        );
+      }
+    }
 
     const updated = await db.action.update({
       where: { id: actionId },

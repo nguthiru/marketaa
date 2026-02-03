@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { PageTip } from "@/components/onboarding/page-tip";
 
 interface SequenceStep {
   id: string;
@@ -170,6 +171,24 @@ export default function SequencesPage() {
             )}
           </div>
         </div>
+
+        <PageTip
+          id="sequences"
+          title="Automate Your Outreach"
+          description="Sequences let you send automated follow-up emails over time. Set it up once and let Marketaa handle the rest."
+          tips={[
+            "Create multi-step email sequences with custom delays",
+            "Sequences pause automatically when a lead replies",
+            "Use templates or AI to generate email content",
+            "Track open rates, replies, and conversions",
+          ]}
+          accentColor="purple"
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          }
+        />
 
         {/* Sequences List */}
         {filteredSequences.length === 0 ? (

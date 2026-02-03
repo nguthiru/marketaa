@@ -3,6 +3,8 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { LogoIcon } from "@/components/logo";
+import { PageTip } from "@/components/onboarding/page-tip";
 interface LeadContext {
   id: string;
   key: string;
@@ -128,8 +130,8 @@ export default function ProjectPage({
     <div className="min-h-screen bg-[#fafafa]">
       {/* Top Navigation */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6 sticky top-0 z-10">
-        <Link href="/projects" className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center">
-          <span className="text-white font-bold text-sm">M</span>
+        <Link href="/projects">
+          <LogoIcon className="w-8 h-8" />
         </Link>
 
         <nav className="flex items-center ml-6 gap-1">
@@ -196,6 +198,25 @@ export default function ProjectPage({
             </button>
           </div>
         </div>
+
+        {/* Onboarding Tip */}
+        <PageTip
+          id={`project-${id}`}
+          title="Manage Your Leads"
+          description="This is your project workspace where you can manage all your leads and outreach."
+          tips={[
+            "Add leads manually or import from CSV",
+            "Click any lead to view details and compose messages",
+            "Use 'Configure' to set up AI plans and project context",
+            "Create sequences for automated follow-up campaigns",
+          ]}
+          accentColor="green"
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          }
+        />
 
         {/* Filters & Search */}
         <div className="flex items-center gap-4 mb-6">

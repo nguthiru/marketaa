@@ -1,8 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Subscription {
   id: string;
@@ -26,92 +35,81 @@ interface Invoice {
 interface Plan {
   name: string;
   code: string;
+  key: string; // "free", "starter", "pro", "enterprise" - used for subscription
   amount: number;
   interval: string;
   features: string[];
+  currency?: string;
 }
 
-const PLANS: Plan[] = [
-  {
-    name: "Free",
-    code: "free",
-    amount: 0,
-    interval: "monthly",
-    features: [
-      "1 Project",
-      "100 Leads",
-      "50 AI-generated emails/month",
-      "Basic templates",
-      "Email support",
-    ],
-  },
-  {
-    name: "Starter",
-    code: "starter",
-    amount: 2500000,
-    interval: "monthly",
-    features: [
-      "5 Projects",
-      "1,000 Leads",
-      "500 AI-generated emails/month",
-      "All templates",
-      "Email sequences",
-      "Basic analytics",
-      "Priority support",
-    ],
-  },
-  {
-    name: "Professional",
-    code: "pro",
-    amount: 7500000,
-    interval: "monthly",
-    features: [
-      "Unlimited Projects",
-      "10,000 Leads",
-      "2,000 AI-generated emails/month",
-      "All templates + A/B testing",
-      "Advanced sequences",
-      "Full analytics",
-      "CRM integrations",
-      "Email warmup",
-      "API access",
-      "Dedicated support",
-    ],
-  },
-  {
-    name: "Enterprise",
-    code: "enterprise",
-    amount: 25000000,
-    interval: "monthly",
-    features: [
-      "Everything in Pro",
-      "Unlimited Leads",
-      "Unlimited AI emails",
-      "Custom integrations",
-      "White-label options",
-      "Dedicated account manager",
-      "SLA guarantee",
-      "Custom training",
-    ],
-  },
-];
+interface Currency {
+  code: string;
+  symbol: string;
+  name: string;
+}
 
 export default function BillingPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [currency, setCurrency] = useState<Currency>({ code: "USD", symbol: "$", name: "US Dollar" });
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [downgrading, setDowngrading] = useState<string | null>(null);
+  const [downgradeModal, setDowngradeModal] = useState<{ open: boolean; planKey: string; planName: string } | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    fetchBillingData();
-  }, []);
+    // Check for payment callback
+    const success = searchParams.get("success");
+    const reference = searchParams.get("reference") || searchParams.get("trxref");
+
+    if (success === "true" && reference) {
+      verifyPayment(reference);
+    } else {
+      fetchBillingData();
+    }
+  }, [searchParams]);
+
+  const verifyPayment = async (reference: string) => {
+    setVerifying(true);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/billing/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setMessage({ type: "success", text: `Successfully upgraded to ${data.planName}!` });
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to verify payment" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Failed to verify payment" });
+    } finally {
+      setVerifying(false);
+      // Remove query params and refresh data
+      router.replace("/settings/billing");
+      fetchBillingData();
+    }
+  };
 
   const fetchBillingData = async () => {
     try {
-      const [subRes, invoicesRes] = await Promise.all([
+      const [subRes, invoicesRes, plansRes] = await Promise.all([
         fetch("/api/billing/subscription"),
         fetch("/api/billing/invoices"),
+        fetch("/api/billing/plans"),
       ]);
 
       if (subRes.ok) {
@@ -123,6 +121,12 @@ export default function BillingPage() {
         const data = await invoicesRes.json();
         setInvoices(data);
       }
+
+      if (plansRes.ok) {
+        const data = await plansRes.json();
+        setPlans(data.plans);
+        setCurrency(data.currency);
+      }
     } catch (error) {
       console.error("Failed to fetch billing data:", error);
     } finally {
@@ -130,14 +134,14 @@ export default function BillingPage() {
     }
   };
 
-  const handleUpgrade = async (planCode: string) => {
-    setUpgrading(planCode);
+  const handleUpgrade = async (planKey: string) => {
+    setUpgrading(planKey);
 
     try {
       const res = await fetch("/api/billing/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planCode }),
+        body: JSON.stringify({ plan: planKey }),
       });
 
       if (res.ok) {
@@ -146,12 +150,49 @@ export default function BillingPage() {
         window.location.href = data.authorization_url;
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to start upgrade");
+        setMessage({ type: "error", text: data.error || "Failed to start upgrade" });
       }
     } catch (error) {
-      alert("Failed to start upgrade");
+      setMessage({ type: "error", text: "Failed to start upgrade" });
     } finally {
       setUpgrading(null);
+    }
+  };
+
+  const openDowngradeModal = (planKey: string, planName: string) => {
+    setDowngradeModal({ open: true, planKey, planName });
+  };
+
+  const closeDowngradeModal = () => {
+    setDowngradeModal(null);
+  };
+
+  const confirmDowngrade = async () => {
+    if (!downgradeModal) return;
+
+    const { planKey } = downgradeModal;
+    setDowngrading(planKey);
+    closeDowngradeModal();
+
+    try {
+      const res = await fetch("/api/billing/downgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: planKey }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message });
+        fetchBillingData();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to downgrade" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Failed to downgrade" });
+    } finally {
+      setDowngrading(null);
     }
   };
 
@@ -179,19 +220,41 @@ export default function BillingPage() {
     }
   };
 
-  const formatAmount = (amountInKobo: number) => {
-    return new Intl.NumberFormat("en-NG", {
+  const formatAmount = (amount: number, planCurrency?: string) => {
+    const currencyCode = planCurrency || currency.code;
+    const value = amount / 100;
+
+    // Use locale based on currency
+    const locale = currencyCode === "NGN" ? "en-NG" : currencyCode === "KES" ? "en-KE" : "en-US";
+
+    return new Intl.NumberFormat(locale, {
       style: "currency",
-      currency: "NGN",
-    }).format(amountInKobo / 100);
+      currency: currencyCode,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
   };
 
-  const currentPlan = PLANS.find((p) => p.code === subscription?.plan) || PLANS[0];
+  // Find current plan - default to free if no subscription or plan not found
+  const userPlanKey = subscription?.plan || "free";
+  const currentPlan = plans.find((p) => p.key === userPlanKey) || plans.find((p) => p.key === "free") || plans[0];
+  const currentPlanIndex = plans.findIndex((p) => p.key === currentPlan?.key);
 
-  if (loading) {
+  if (verifying) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-teal-200 border-t-teal-500 rounded-full animate-spin"></div>
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600">Verifying your payment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || plans.length === 0 || !currentPlan) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -199,6 +262,29 @@ export default function BillingPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Success/Error Message */}
+        {message && (
+          <div
+            className={`mb-6 p-4 rounded-lg ${
+              message.type === "success"
+                ? "bg-green-50 border border-green-200 text-green-800"
+                : "bg-red-50 border border-red-200 text-red-800"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <p>{message.text}</p>
+              <button
+                onClick={() => setMessage(null)}
+                className="text-current opacity-50 hover:opacity-100"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Breadcrumb */}
         <div className="mb-6">
           <Link
@@ -227,7 +313,7 @@ export default function BillingPage() {
                 {currentPlan.name}
                 {currentPlan.amount > 0 && (
                   <span className="text-lg font-normal text-slate-500 ml-2">
-                    {formatAmount(currentPlan.amount)}/month
+                    {formatAmount(currentPlan.amount, currentPlan.currency)}/{currentPlan.interval === "annually" ? "year" : "month"}
                   </span>
                 )}
               </p>
@@ -239,7 +325,7 @@ export default function BillingPage() {
                 </p>
               )}
             </div>
-            {subscription?.status === "active" && currentPlan.code !== "free" && !subscription.cancelAtPeriodEnd && (
+            {subscription?.status === "active" && currentPlan.key !== "free" && !subscription.cancelAtPeriodEnd && (
               <Button
                 variant="secondary"
                 onClick={handleCancel}
@@ -257,7 +343,7 @@ export default function BillingPage() {
             <ul className="grid grid-cols-2 gap-2">
               {currentPlan.features.map((feature, i) => (
                 <li key={i} className="flex items-center gap-2 text-sm text-slate-600">
-                  <svg className="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                   {feature}
@@ -271,34 +357,34 @@ export default function BillingPage() {
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Available Plans</h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {PLANS.map((plan) => {
-              const isCurrent = plan.code === currentPlan.code;
-              const isUpgrade = PLANS.indexOf(plan) > PLANS.indexOf(currentPlan);
+            {plans.map((plan, index) => {
+              const isCurrent = plan.key === currentPlan?.key;
+              const isUpgrade = index > currentPlanIndex;
 
               return (
                 <div
                   key={plan.code}
                   className={`bg-white rounded-xl border p-5 ${
-                    isCurrent ? "border-teal-500 ring-2 ring-teal-100" : "border-slate-200"
+                    isCurrent ? "border-pink-500 ring-2 ring-pink-100" : "border-slate-200"
                   }`}
                 >
                   {isCurrent && (
-                    <span className="text-xs px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full">
+                    <span className="text-xs px-2 py-0.5 bg-pink-100 text-pink-700 rounded-full">
                       Current Plan
                     </span>
                   )}
                   <h3 className="text-lg font-semibold text-slate-900 mt-2">{plan.name}</h3>
                   <p className="text-2xl font-bold text-slate-900 mt-1">
-                    {plan.amount === 0 ? "Free" : formatAmount(plan.amount)}
+                    {plan.amount === 0 ? "Free" : formatAmount(plan.amount, plan.currency)}
                     {plan.amount > 0 && (
-                      <span className="text-sm font-normal text-slate-500">/mo</span>
+                      <span className="text-sm font-normal text-slate-500">/{plan.interval === "annually" ? "yr" : "mo"}</span>
                     )}
                   </p>
 
                   <ul className="mt-4 space-y-2">
                     {plan.features.slice(0, 4).map((feature, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                        <svg className="w-4 h-4 text-teal-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-4 h-4 text-pink-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                         {feature}
@@ -319,14 +405,24 @@ export default function BillingPage() {
                     ) : isUpgrade ? (
                       <Button
                         variant="default"
-                        onClick={() => handleUpgrade(plan.code)}
-                        loading={upgrading === plan.code}
+                        onClick={() => handleUpgrade(plan.key)}
+                        loading={upgrading === plan.key}
                         className="w-full"
                       >
                         Upgrade
                       </Button>
-                    ) : (
+                    ) : currentPlan.key === "free" ? (
+                      // Can't downgrade from free plan
                       <Button variant="secondary" disabled className="w-full">
+                        Current Plan
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onClick={() => openDowngradeModal(plan.key, plan.name)}
+                        loading={downgrading === plan.key}
+                        className="w-full text-amber-600 border-amber-200 hover:bg-amber-50"
+                      >
                         Downgrade
                       </Button>
                     )}
@@ -366,12 +462,12 @@ export default function BillingPage() {
                       {invoice.description || "Subscription payment"}
                     </td>
                     <td className="px-5 py-3 text-sm text-slate-900">
-                      {formatAmount(invoice.amount)}
+                      {formatAmount(invoice.amount, invoice.currency)}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full ${
                         invoice.status === "paid"
-                          ? "bg-teal-100 text-teal-700"
+                          ? "bg-pink-100 text-pink-700"
                           : invoice.status === "pending"
                           ? "bg-amber-100 text-amber-700"
                           : "bg-red-100 text-red-700"
@@ -386,6 +482,79 @@ export default function BillingPage() {
           )}
         </div>
       </div>
+
+      {/* Downgrade Confirmation Modal */}
+      <Dialog open={downgradeModal?.open || false} onOpenChange={(open) => !open && closeDowngradeModal()}>
+        <DialogContent className="bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900">
+              Downgrade to {downgradeModal?.planName}?
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              {downgradeModal?.planKey === "free" ? (
+                "You're about to downgrade to the Free plan."
+              ) : (
+                `You're about to downgrade to the ${downgradeModal?.planName} plan.`
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <h4 className="font-medium text-amber-800 mb-2">What happens next:</h4>
+              <ul className="space-y-2 text-sm text-amber-700">
+                {subscription?.currentPeriodEnd ? (
+                  <>
+                    <li className="flex items-start gap-2">
+                      <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>
+                        You'll keep your current plan until{" "}
+                        <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                      </svg>
+                      <span>After that date, you'll be moved to {downgradeModal?.planName}</span>
+                    </li>
+                  </>
+                ) : (
+                  <li className="flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>Your plan will change immediately</span>
+                  </li>
+                )}
+                {downgradeModal?.planKey === "free" && (
+                  <li className="flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span>You'll lose access to premium features like sequences, CRM sync, and advanced analytics</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" onClick={closeDowngradeModal}>
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={confirmDowngrade}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              Confirm Downgrade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
+import { PageTip } from "@/components/onboarding/page-tip";
 
 interface Project {
   id: string;
@@ -79,10 +81,9 @@ export default function ProjectsPage() {
     <div className="min-h-screen bg-[#fafafa]">
       {/* Header */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6">
-        <Link href="/projects" className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center">
-          <span className="text-white font-bold text-sm">M</span>
+        <Link href="/projects">
+          <Logo size="md" className="text-slate-900" />
         </Link>
-        <span className="ml-3 font-semibold text-slate-900">Marketaa</span>
 
         <nav className="ml-8 flex items-center gap-1">
           <button className="px-3 py-1.5 text-sm bg-slate-100 text-slate-900 rounded-md font-medium">
@@ -109,6 +110,24 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Your Projects</h1>
           <p className="text-slate-500 mt-1">Manage your outreach campaigns and leads</p>
         </div>
+
+        <PageTip
+          id="projects"
+          title="Getting Started with Projects"
+          description="Projects help you organize your outreach campaigns. Each project contains leads, email plans, and tracks your progress."
+          tips={[
+            "Create a project for each campaign or target audience",
+            "Import leads via CSV or add them manually",
+            "Set up email plans to define your outreach strategy",
+            "Track replies and conversions in one place",
+          ]}
+          accentColor="blue"
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          }
+        />
 
         {projects.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">

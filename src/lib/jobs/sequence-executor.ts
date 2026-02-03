@@ -107,14 +107,48 @@ async function executeEmailStep(
   // Get subject and body from step or template
   let subject = step.subject;
   let body = step.body;
+  let templateId: string | undefined;
+  let variantId: string | undefined;
 
   if (step.templateId) {
+    // Fetch template with its variants for A/B testing
     const template = await db.emailTemplate.findUnique({
       where: { id: step.templateId },
+      include: {
+        variants: {
+          where: { isActive: true },
+        },
+      },
     });
+
     if (template) {
-      subject = template.subject;
-      body = template.body;
+      templateId = template.id;
+
+      // Check if template has active variants for A/B testing
+      if (template.variants && template.variants.length > 0) {
+        // Randomly select between the original template and its variants
+        // Include the original template in the selection pool
+        const options = [
+          { id: null, subject: template.subject, body: template.body }, // Original
+          ...template.variants.map((v) => ({
+            id: v.id,
+            subject: v.subject,
+            body: v.body,
+          })),
+        ];
+
+        // Randomly select one option
+        const randomIndex = Math.floor(Math.random() * options.length);
+        const selected = options[randomIndex];
+
+        subject = selected.subject;
+        body = selected.body;
+        variantId = selected.id ?? undefined;
+      } else {
+        // No variants, use the template directly
+        subject = template.subject;
+        body = template.body;
+      }
     }
   }
 
@@ -133,7 +167,7 @@ async function executeEmailStep(
     return { status: "skipped", message: "No plan available in project" };
   }
 
-  // Create action (email draft)
+  // Create action (email draft) with template/variant tracking
   const action = await db.action.create({
     data: {
       type: "email",
@@ -142,13 +176,24 @@ async function executeEmailStep(
       body,
       leadId: enrollment.lead.id,
       planId,
-      reasoning: JSON.stringify({ source: "sequence", stepId: step.id }),
+      templateId,
+      variantId,
+      reasoning: JSON.stringify({
+        source: "sequence",
+        stepId: step.id,
+        ...(templateId && { templateId }),
+        ...(variantId && { variantId, abTest: true }),
+      }),
     },
   });
 
   return {
     status: "completed",
-    message: "Email action created",
+    message: variantId
+      ? `Email action created (A/B variant: ${variantId})`
+      : templateId
+        ? "Email action created (template)"
+        : "Email action created",
     actionId: action.id,
   };
 }

@@ -83,7 +83,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { name, subject, body: templateBody, category, tags, isShared } = body;
+    const { name, subject, body: templateBody, category, isShared } = body;
 
     const template = await db.emailTemplate.update({
       where: { id },
@@ -92,7 +92,6 @@ export async function PATCH(
         ...(subject !== undefined && { subject: subject.trim() }),
         ...(templateBody !== undefined && { body: templateBody.trim() }),
         ...(category !== undefined && { category }),
-        ...(tags !== undefined && { tags: JSON.stringify(tags) }),
         ...(isShared !== undefined && { isShared }),
       },
       include: {

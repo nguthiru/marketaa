@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getGmailAccessToken, listGmailMessages, getGmailMessage, parseEmailHeaders, decodeEmailBody } from "@/lib/integrations/gmail/client";
+import { classifyAndStoreReply, getClassificationDisplayInfo } from "@/lib/ai/reply-classifier";
 
 interface SyncResult {
   provider: string;
@@ -177,7 +178,7 @@ async function processGmailReply(
     }
 
     // Create email message record
-    await db.emailMessage.create({
+    const emailMessage = await db.emailMessage.create({
       data: {
         actionId: matchingAction.id,
         direction: "inbound",
@@ -189,29 +190,56 @@ async function processGmailReply(
       },
     });
 
+    // Classify the reply using AI
+    let classification = null;
+    let classificationInfo = null;
+    try {
+      classification = await classifyAndStoreReply(emailMessage.id);
+      if (classification) {
+        classificationInfo = getClassificationDisplayInfo(classification.classification);
+      }
+    } catch (error) {
+      console.error("Error classifying reply:", error);
+    }
+
     // Get lead details for notification
     const lead = await db.lead.findUnique({
       where: { id: matchingAction.leadId },
     });
 
-    // Update lead status
-    await db.lead.update({
-      where: { id: matchingAction.leadId },
-      data: { status: "responded" },
-    });
+    // Lead status is now updated by the classifier based on classification
+    // But if classification failed, fall back to basic "responded" status
+    if (!classification) {
+      await db.lead.update({
+        where: { id: matchingAction.leadId },
+        data: { status: "responded" },
+      });
+    }
 
-    // Create notification
+    // Create enhanced notification with classification info
+    const notificationTitle = classification && classificationInfo
+      ? `${classificationInfo.label} reply received`
+      : "New reply received";
+
+    const notificationMessage = classification
+      ? `${senderName || senderEmail} replied: ${classificationInfo?.description || classification.classification}`
+      : `${senderName || senderEmail} replied to your email`;
+
     await db.notification.create({
       data: {
         userId,
         type: "lead_reply",
-        title: "New reply received",
-        message: `${senderName || senderEmail} replied to your email`,
+        title: notificationTitle,
+        message: notificationMessage,
         link: lead ? `/projects/${lead.projectId}?lead=${matchingAction.leadId}` : `/projects`,
         metadata: JSON.stringify({
           leadId: matchingAction.leadId,
           actionId: matchingAction.id,
           leadName: lead?.name || "Unknown",
+          emailMessageId: emailMessage.id,
+          classification: classification?.classification,
+          requiresResponse: classification?.requiresResponse,
+          nextActionSuggestion: classification?.nextActionSuggestion,
         }),
       },
     });

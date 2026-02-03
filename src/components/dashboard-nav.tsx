@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useState } from "react";
+import { Logo } from "@/components/logo";
 
 interface User {
   name?: string | null;
@@ -30,13 +31,8 @@ export function DashboardNav({ user }: { user: User }) {
     <>
       {/* Mobile header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)] flex items-center justify-between px-4 z-50">
-        <Link href="/projects" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-            <span className="text-white text-sm font-bold">M</span>
-          </div>
-          <span className="font-semibold text-[var(--text-primary)]">
-            Marketaa
-          </span>
+        <Link href="/projects">
+          <Logo size="sm" className="text-[var(--text-primary)]" />
         </Link>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -73,17 +69,7 @@ export function DashboardNav({ user }: { user: User }) {
         {/* Logo area */}
         <div className="h-16 flex items-center px-5 border-b border-[var(--border-subtle)]">
           <Link href="/projects" className="flex items-center gap-3 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:shadow-indigo-500/20 transition-shadow">
-              <span className="text-white text-lg font-bold">M</span>
-            </div>
-            <div>
-              <span className="font-semibold text-[var(--text-primary)] text-lg">
-                Marketaa
-              </span>
-              <p className="text-[10px] text-[var(--text-tertiary)] -mt-0.5">
-                Research · Reach · Connect
-              </p>
-            </div>
+            <Logo size="md" className="text-[var(--text-primary)]" />
           </Link>
         </div>
 

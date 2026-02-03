@@ -21,6 +21,7 @@ export interface SendEmailParams {
   html?: string;
   from?: string;
   replyTo?: string;
+  headers?: Record<string, string>;
 }
 
 export interface SendEmailResult {
@@ -41,6 +42,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       text: params.body || "",
       html: params.html,
       replyTo: params.replyTo,
+      headers: params.headers,
     });
 
     if (error) {
@@ -54,6 +56,29 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       error: err instanceof Error ? err.message : "Unknown error",
     };
   }
+}
+
+/**
+ * Convert plain text to simple HTML with paragraphs
+ */
+export function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const paragraphs = escaped.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #333;">
+  ${paragraphs.join("\n  ")}
+</body>
+</html>`;
 }
 
 export function validateEmailRecipient(email: string | null | undefined): string | null {

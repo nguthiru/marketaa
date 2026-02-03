@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TemplateCard } from "@/components/templates/template-card";
+import { PageTip } from "@/components/onboarding/page-tip";
 
 interface TemplateVariant {
   id: string;
@@ -115,6 +116,24 @@ export default function TemplatesPage() {
             </button>
           ))}
         </div>
+
+        <PageTip
+          id="templates"
+          title="Create Reusable Templates"
+          description="Templates save you time and help maintain consistent messaging across your outreach campaigns."
+          tips={[
+            "Use variables like {{name}} and {{company}} for personalization",
+            "Track performance to see which templates get the best results",
+            "Create A/B test variants to optimize your messaging",
+            "Share templates with your team for consistent outreach",
+          ]}
+          accentColor="green"
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          }
+        />
 
         {/* Templates Grid */}
         {loading ? (

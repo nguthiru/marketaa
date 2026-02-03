@@ -38,7 +38,7 @@ export async function POST(
   }
 
   try {
-    const { planId, type, subject, body, reasoning } = await req.json();
+    const { planId, type, subject, body, reasoning, templateId, variantId } = await req.json();
 
     const action = await db.action.create({
       data: {
@@ -49,6 +49,8 @@ export async function POST(
         body,
         reasoning: reasoning || null,
         status: "draft",
+        templateId: templateId || null,
+        variantId: variantId || null,
       },
       include: {
         plan: true,

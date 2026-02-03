@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { IntegrationCard } from "@/components/integrations/integration-card";
+import { PageTip } from "@/components/onboarding/page-tip";
 
 interface IntegrationStatus {
   provider: string;
@@ -111,6 +112,24 @@ export default function IntegrationsPage() {
             Connect external services to sync data and automate workflows
           </p>
         </div>
+
+        <PageTip
+          id="integrations"
+          title="Connect Your Email"
+          description="Link your email account to send campaigns and track replies automatically."
+          tips={[
+            "Connect Gmail to send emails directly from Marketaa",
+            "Calendar syncs automatically when you connect email",
+            "CRM integrations keep your contacts in sync",
+            "All credentials are encrypted and securely stored",
+          ]}
+          accentColor="pink"
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+          }
+        />
 
         {loading ? (
           <div className="flex items-center justify-center py-12">

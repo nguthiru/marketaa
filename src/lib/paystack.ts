@@ -1,14 +1,22 @@
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || "";
-const PAYSTACK_BASE_URL = "https://api.paystack.co";
+const PAYSTACK_BASE_URL = process.env.PAYSTACK_BASE_URL || "https://api.paystack.co";
 
 export interface PaystackPlan {
   name: string;
   code: string;
-  amount: number; // In kobo (NGN) or cents
+  amount: number; // In smallest currency unit (kobo for NGN, cents for USD)
   interval: "monthly" | "annually";
   features: string[];
+  currency?: string; // Currency code (NGN, USD, etc.)
 }
+
+// Currency configuration
+export const CURRENCY = {
+  code: "KES",
+  symbol: "KES ",
+  name: "Kenyan Shilling",
+};
 
 export const PLANS: Record<string, PaystackPlan> = {
   free: {
@@ -27,7 +35,7 @@ export const PLANS: Record<string, PaystackPlan> = {
   starter: {
     name: "Starter",
     code: process.env.PAYSTACK_STARTER_PLAN_CODE || "PLN_starter",
-    amount: 2500000, // ₦25,000/month in kobo
+    amount: 2900, // $29/month in cents
     interval: "monthly",
     features: [
       "5 Projects",
@@ -42,7 +50,7 @@ export const PLANS: Record<string, PaystackPlan> = {
   pro: {
     name: "Professional",
     code: process.env.PAYSTACK_PRO_PLAN_CODE || "PLN_pro",
-    amount: 7500000, // ₦75,000/month in kobo
+    amount: 7900, // $79/month in cents
     interval: "monthly",
     features: [
       "Unlimited Projects",
@@ -60,7 +68,7 @@ export const PLANS: Record<string, PaystackPlan> = {
   enterprise: {
     name: "Enterprise",
     code: process.env.PAYSTACK_ENTERPRISE_PLAN_CODE || "PLN_enterprise",
-    amount: 25000000, // ₦250,000/month in kobo
+    amount: 24900, // $249/month in cents
     interval: "monthly",
     features: [
       "Everything in Pro",
@@ -133,6 +141,7 @@ export async function verifyTransaction(reference: string) {
     status: string;
     reference: string;
     amount: number;
+    currency: string;
     customer: {
       id: number;
       email: string;
@@ -150,6 +159,7 @@ export async function verifyTransaction(reference: string) {
       plan_code: string;
       name: string;
     };
+    metadata?: Record<string, unknown>;
   };
 }
 
@@ -242,6 +252,47 @@ export function getPublicKey() {
   return PAYSTACK_PUBLIC_KEY;
 }
 
+// Fetch a single plan from Paystack
+export async function fetchPlan(planCode: string) {
+  try {
+    const data = await paystackRequest(`/plan/${planCode}`);
+    return data.data as {
+      id: number;
+      name: string;
+      plan_code: string;
+      amount: number;
+      interval: string;
+      currency: string;
+    };
+  } catch (error) {
+    console.error(`Failed to fetch plan ${planCode}:`, error);
+    return null;
+  }
+}
+
+// Fetch all plans from Paystack and merge with local features
+export async function getPlansWithPricing(): Promise<Record<string, PaystackPlan>> {
+  const plans = { ...PLANS };
+
+  // Fetch live pricing for paid plans
+  for (const [key, plan] of Object.entries(plans)) {
+    if (key === "free") continue; // Skip free plan
+
+    const paystackPlan = await fetchPlan(plan.code);
+    if (paystackPlan) {
+      plans[key] = {
+        ...plan,
+        name: paystackPlan.name,
+        amount: paystackPlan.amount,
+        interval: paystackPlan.interval as "monthly" | "annually",
+        currency: paystackPlan.currency,
+      };
+    }
+  }
+
+  return plans;
+}
+
 // Verify webhook signature
 export function verifyWebhookSignature(payload: string, signature: string): boolean {
   const crypto = require("crypto");
@@ -253,9 +304,9 @@ export function verifyWebhookSignature(payload: string, signature: string): bool
 }
 
 // Format amount for display
-export function formatAmount(amountInKobo: number, currency: string = "NGN"): string {
-  const amount = amountInKobo / 100;
-  return new Intl.NumberFormat("en-NG", {
+export function formatAmount(amountInCents: number, currency: string = "USD"): string {
+  const amount = amountInCents / 100;
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
   }).format(amount);

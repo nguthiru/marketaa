@@ -107,6 +107,35 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+### 6. Create an admin user
+
+First, register a regular account through the UI at `/register`. Then promote it to admin:
+
+**Option A: Using Prisma Studio**
+
+```bash
+npx prisma studio
+```
+
+Navigate to the `User` table, find your user, and change `role` from `"user"` to `"admin"`.
+
+**Option B: Using SQLite CLI**
+
+```bash
+sqlite3 prisma/dev.db "UPDATE User SET role = 'admin' WHERE email = 'your@email.com';"
+```
+
+**Option C: Using PostgreSQL**
+
+```bash
+psql $DATABASE_URL -c "UPDATE \"User\" SET role = 'admin' WHERE email = 'your@email.com';"
+```
+
+Once promoted, you'll see the **Admin Dashboard** link in the sidebar with access to:
+- User management (view, edit roles, manage subscriptions)
+- Platform statistics
+- Subscription plan management
+
 ## Project Structure
 
 ```
@@ -210,6 +239,19 @@ Or use Vercel Cron with `vercel.json`:
   }]
 }
 ```
+
+## Admin Features
+
+The admin dashboard (`/admin`) provides:
+
+- **Dashboard** - Platform-wide statistics (users, projects, leads, revenue)
+- **User Management** (`/admin/users`) - View all users, change roles, manage subscriptions
+- **Plan Management** (`/admin/plans`) - Configure subscription plans and pricing
+
+Admin capabilities:
+- Promote/demote users to admin role
+- Manually assign subscription plans to users
+- View platform-wide metrics and growth trends
 
 ## Scripts
 

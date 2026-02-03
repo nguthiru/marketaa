@@ -270,3 +270,77 @@
 .text-balance {
   text-wrap: balance;
 }
+
+/* Driver.js Product Tour Styles */
+.driver-popover {
+  background-color: white !important;
+  border-radius: 12px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  padding: 1rem !important;
+  max-width: 320px !important;
+}
+
+.driver-popover-title {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.driver-popover-description {
+  font-size: 0.875rem !important;
+  color: #64748b !important;
+  line-height: 1.5 !important;
+}
+
+.driver-popover-progress-text {
+  color: #ec4899 !important;
+  font-size: 0.75rem !important;
+}
+
+.driver-popover-navigation-btns {
+  gap: 0.5rem !important;
+}
+
+.driver-popover-prev-btn,
+.driver-popover-next-btn {
+  background: #ec4899 !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 0.5rem 1rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background-color 0.2s !important;
+}
+
+.driver-popover-prev-btn:hover,
+.driver-popover-next-btn:hover {
+  background: #db2777 !important;
+}
+
+.driver-popover-prev-btn {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+}
+
+.driver-popover-prev-btn:hover {
+  background: #e2e8f0 !important;
+}
+
+.driver-popover-close-btn {
+  color: #94a3b8 !important;
+}
+
+.driver-popover-close-btn:hover {
+  color: #475569 !important;
+}
+
+.driver-popover-arrow {
+  border-color: white !important;
+}
+
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+}

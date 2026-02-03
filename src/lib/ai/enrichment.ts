@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { db } from "@/lib/db";
+import { getUserWritingStyle } from "@/lib/ai/style-learning/aggregator";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -147,7 +148,8 @@ Respond in JSON format:
  */
 export async function generateAction(
   leadId: string,
-  planId: string
+  planId: string,
+  userId?: string
 ): Promise<{
   subject?: string;
   body: string;
@@ -175,6 +177,19 @@ export async function generateAction(
   });
 
   if (!lead || !plan) return null;
+
+  // Get user's writing style if userId provided
+  let styleInstruction = "";
+  if (userId) {
+    try {
+      const style = await getUserWritingStyle(userId);
+      if (style?.hasStyle && style.stylePromptAddition) {
+        styleInstruction = `\n\nUSER'S WRITING STYLE PREFERENCES:\n${style.stylePromptAddition}`;
+      }
+    } catch (error) {
+      console.error("Error fetching writing style:", error);
+    }
+  }
 
   const leadContext = lead.contextItems
     .map((c) => `[${c.confidence}] ${c.key}: ${c.value}`)
@@ -236,7 +251,7 @@ Pick the structure that fits best. Keep it SHORT. Sound human.`
 - One hook relevant to them
 - One case study/proof point
 - Simple ask for next step`
-}
+}${styleInstruction}
 
 Respond with the email/brief. Be brief about your reasoning.
 

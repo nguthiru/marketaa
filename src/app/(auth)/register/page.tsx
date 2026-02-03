@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -44,10 +45,8 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">M</span>
-            </div>
+          <Link href="/" className="inline-flex items-center justify-center mb-6">
+            <Logo size="lg" showText={false} />
           </Link>
           <h1 className="text-xl font-semibold text-slate-900">
             Create your account

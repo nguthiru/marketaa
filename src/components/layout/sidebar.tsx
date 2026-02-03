@@ -38,12 +38,15 @@ import {
   UserIcon,
   PlusIcon,
 } from "lucide-react";
+import { Logo } from "@/components/logo";
+import { OnboardingChecklist } from "@/components/onboarding/onboarding-checklist";
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ReactNode;
   badge?: string;
+  tourKey?: string;
 }
 
 const navigation: NavItem[] = [
@@ -51,16 +54,19 @@ const navigation: NavItem[] = [
     name: "Projects",
     href: "/projects",
     icon: <FolderIcon className="w-5 h-5" />,
+    tourKey: "projects",
   },
   {
     name: "Templates",
     href: "/templates",
     icon: <FileTextIcon className="w-5 h-5" />,
+    tourKey: "templates",
   },
   {
     name: "Sequences",
     href: "/sequences",
     icon: <RefreshCwIcon className="w-5 h-5" />,
+    tourKey: "sequences",
   },
   {
     name: "Analytics",
@@ -79,6 +85,7 @@ const secondaryNavigation: NavItem[] = [
     name: "Settings",
     href: "/settings",
     icon: <SettingsIcon className="w-5 h-5" />,
+    tourKey: "settings",
   },
 ];
 
@@ -133,11 +140,8 @@ export function Sidebar() {
       <div className="flex flex-col w-64 bg-sidebar text-sidebar-foreground h-screen sticky top-0">
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-sidebar-border">
-          <Link href="/projects" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-              <span className="text-sidebar-primary-foreground font-bold text-sm">M</span>
-            </div>
-            <span className="font-semibold text-sidebar-foreground text-lg">Marketaa</span>
+          <Link href="/projects">
+            <Logo size="md" className="text-sidebar-foreground" />
           </Link>
           <NotificationBell />
         </div>
@@ -163,6 +167,7 @@ export function Sidebar() {
                 <TooltipTrigger asChild>
                   <Link
                     href={item.href}
+                    data-tour={item.tourKey}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       isActive(item.href)
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -196,6 +201,7 @@ export function Sidebar() {
                 <TooltipTrigger asChild>
                   <Link
                     href={item.href}
+                    data-tour={item.tourKey}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       isActive(item.href)
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -237,8 +243,13 @@ export function Sidebar() {
             )}
 
             {/* Usage Card */}
-            <div className="mt-6 px-1">
+            <div className="mt-6 px-1" data-tour="usage">
               <UsageCard />
+            </div>
+
+            {/* Onboarding Checklist */}
+            <div className="mt-4 px-1">
+              <OnboardingChecklist />
             </div>
           </div>
         </ScrollArea>

@@ -19,6 +19,7 @@ export async function POST(
     where: { id: actionId },
     include: {
       lead: { include: { project: true } },
+      feedback: true, // Include existing feedback to check for changes
     },
   });
 
@@ -82,6 +83,81 @@ export async function POST(
       where: { id: actionId },
       data: { status: newStatus },
     });
+
+    // Update template metrics if this action used a template
+    // Only increment if this is a new feedback (not updating existing)
+    const isNewFeedback = !action.feedback;
+    const previousOutcome = action.feedback?.outcome;
+
+    if (action.templateId && isNewFeedback) {
+      // Track replies (any positive engagement counts as a reply)
+      const replyOutcomes = ["replied", "follow_up", "meeting_booked", "converted"];
+      if (replyOutcomes.includes(outcome)) {
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { replyCount: { increment: 1 } },
+        });
+
+        if (action.variantId) {
+          await db.templateVariant.update({
+            where: { id: action.variantId },
+            data: { replyCount: { increment: 1 } },
+          });
+        }
+      }
+
+      // Track meeting bookings
+      if (outcome === "meeting_booked") {
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { meetingCount: { increment: 1 } },
+        });
+      }
+    } else if (action.templateId && previousOutcome !== outcome) {
+      // Handle outcome changes - adjust counts accordingly
+      const replyOutcomes = ["replied", "follow_up", "meeting_booked", "converted"];
+      const wasReply = replyOutcomes.includes(previousOutcome || "");
+      const isReply = replyOutcomes.includes(outcome);
+
+      if (!wasReply && isReply) {
+        // Changed from non-reply to reply
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { replyCount: { increment: 1 } },
+        });
+        if (action.variantId) {
+          await db.templateVariant.update({
+            where: { id: action.variantId },
+            data: { replyCount: { increment: 1 } },
+          });
+        }
+      } else if (wasReply && !isReply) {
+        // Changed from reply to non-reply
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { replyCount: { decrement: 1 } },
+        });
+        if (action.variantId) {
+          await db.templateVariant.update({
+            where: { id: action.variantId },
+            data: { replyCount: { decrement: 1 } },
+          });
+        }
+      }
+
+      // Handle meeting count changes
+      if (previousOutcome !== "meeting_booked" && outcome === "meeting_booked") {
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { meetingCount: { increment: 1 } },
+        });
+      } else if (previousOutcome === "meeting_booked" && outcome !== "meeting_booked") {
+        await db.emailTemplate.update({
+          where: { id: action.templateId },
+          data: { meetingCount: { decrement: 1 } },
+        });
+      }
+    }
 
     return NextResponse.json(feedback);
   } catch (error) {
