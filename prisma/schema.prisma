@@ -61,6 +61,7 @@ model User {
   crmMappings         CRMMapping[]
   writingStyle        UserWritingStyle?
   editPatterns        EditPattern[]
+  emailConfig         UserEmailConfig?
 }
 
 model UserPreferences {
@@ -263,9 +264,69 @@ model Project {
   sequences   Sequence[]
   importJobs  ImportJob[]
   teamInvites TeamInvite[]
+  emailConfig ProjectEmailConfig?
 
   // Unsubscribe/suppression list
   suppressions Suppression[]
+}
+
+// Per-project email sending configuration
+model ProjectEmailConfig {
+  id             String   @id @default(cuid())
+  useAccountConfig Boolean @default(false) // If true, use account-level config
+  provider       String   @default("resend") // "resend" | "smtp"
+  fromEmail      String?
+  fromName       String?
+  replyTo        String?
+
+  // Resend configuration
+  resendApiKey String?
+
+  // SMTP configuration
+  smtpHost     String?
+  smtpPort     Int?
+  smtpSecure   Boolean  @default(true)
+  smtpUser     String?
+  smtpPassword String?
+
+  // Status
+  isVerified   Boolean  @default(false)
+  lastTestedAt DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId   String   @unique
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Account-level email configuration (shared across projects)
+model UserEmailConfig {
+  id          String   @id @default(cuid())
+  provider    String   @default("resend") // "resend" | "smtp"
+  fromEmail   String?
+  fromName    String?
+  replyTo     String?
+
+  // Resend configuration
+  resendApiKey String?
+
+  // SMTP configuration
+  smtpHost     String?
+  smtpPort     Int?
+  smtpSecure   Boolean  @default(true)
+  smtpUser     String?
+  smtpPassword String?
+
+  // Status
+  isVerified   Boolean  @default(false)
+  lastTestedAt DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ProjectMember {

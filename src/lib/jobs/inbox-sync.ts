@@ -216,6 +216,18 @@ async function processGmailReply(
       });
     }
 
+    // Auto-pause any active sequence enrollments for this lead
+    // This implements the "sequences pause automatically when a lead replies" feature
+    await db.sequenceEnrollment.updateMany({
+      where: {
+        leadId: matchingAction.leadId,
+        status: "active",
+      },
+      data: {
+        status: "paused",
+      },
+    });
+
     // Create enhanced notification with classification info
     const notificationTitle = classification && classificationInfo
       ? `${classificationInfo.label} reply received`

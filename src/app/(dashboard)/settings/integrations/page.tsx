@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { IntegrationCard } from "@/components/integrations/integration-card";
 import { PageTip } from "@/components/onboarding/page-tip";
+import { EmailSendingConfig } from "@/components/integrations/email-sending-config";
 
 interface IntegrationStatus {
   provider: string;
@@ -137,13 +138,27 @@ export default function IntegrationsPage() {
           </div>
         ) : (
           <div className="space-y-8">
+            {/* Email Sending Configuration */}
+            <section>
+              <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Email Sending
+              </h2>
+              <p className="text-sm text-slate-500 mb-4">
+                Configure how emails are sent from your account. Projects can use these settings or have their own configuration.
+              </p>
+              <EmailSendingConfig />
+            </section>
+
             {/* Email Providers */}
             <section>
               <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
                 <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                Email
+                Email Inbox
               </h2>
               <div className="space-y-4">
                 {emailIntegrations.map((integration) => (

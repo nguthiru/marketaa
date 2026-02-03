@@ -39,7 +39,6 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
-import { OnboardingChecklist } from "@/components/onboarding/onboarding-checklist";
 
 interface NavItem {
   name: string;
@@ -245,11 +244,6 @@ export function Sidebar() {
             {/* Usage Card */}
             <div className="mt-6 px-1" data-tour="usage">
               <UsageCard />
-            </div>
-
-            {/* Onboarding Checklist */}
-            <div className="mt-4 px-1">
-              <OnboardingChecklist />
             </div>
           </div>
         </ScrollArea>

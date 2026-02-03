@@ -30,6 +30,24 @@ interface Enrollment {
   };
 }
 
+interface Template {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+}
+
+interface SequenceStats {
+  totalEnrolled: number;
+  active: number;
+  completed: number;
+  paused: number;
+  exited: number;
+  emailsSent: number;
+  openRate: number;
+  replyRate: number;
+}
+
 interface Sequence {
   id: string;
   name: string;
@@ -49,11 +67,14 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"builder" | "enrollments">("builder");
+  const [activeTab, setActiveTab] = useState<"builder" | "enrollments" | "analytics">("builder");
   const [showAddStep, setShowAddStep] = useState(false);
+  const [stats, setStats] = useState<SequenceStats | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
 
   useEffect(() => {
     fetchSequence();
+    fetchTemplates();
   }, [id]);
 
   const fetchSequence = async () => {
@@ -65,10 +86,36 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
       }
       const data = await res.json();
       setSequence(data);
+      // Fetch stats after we have the sequence
+      fetchStats();
     } catch (error) {
       console.error("Failed to fetch sequence:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch(`/api/sequences/${id}/stats`);
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch("/api/templates");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data.templates || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch templates:", error);
     }
   };
 
@@ -119,6 +166,20 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
       await fetchSequence();
     } catch (error) {
       console.error("Failed to delete step:", error);
+    }
+  };
+
+  const handleUnenroll = async (leadId: string) => {
+    if (!confirm("Remove this lead from the sequence?")) return;
+
+    try {
+      await fetch(`/api/sequences/${id}/enroll?leadId=${leadId}`, {
+        method: "DELETE",
+      });
+      await fetchSequence();
+      fetchStats();
+    } catch (error) {
+      console.error("Failed to unenroll lead:", error);
     }
   };
 
@@ -224,6 +285,16 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
           >
             Enrollments ({sequence._count.enrollments})
           </button>
+          <button
+            onClick={() => setActiveTab("analytics")}
+            className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "analytics"
+                ? "border-teal-500 text-teal-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Analytics
+          </button>
         </div>
 
         {/* Content */}
@@ -301,6 +372,7 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
                     <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">
                       Enrolled
                     </th>
+                    <th className="w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -318,6 +390,8 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
                             ? "bg-teal-100 text-teal-700"
                             : enrollment.status === "completed"
                             ? "bg-blue-100 text-blue-700"
+                            : enrollment.status === "paused"
+                            ? "bg-amber-100 text-amber-700"
                             : "bg-slate-100 text-slate-600"
                         }`}>
                           {enrollment.status}
@@ -329,6 +403,19 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
                       <td className="px-4 py-3 text-sm text-slate-500">
                         {new Date(enrollment.enrolledAt).toLocaleDateString()}
                       </td>
+                      <td className="px-4 py-3">
+                        {enrollment.status !== "exited" && enrollment.status !== "completed" && (
+                          <button
+                            onClick={() => handleUnenroll(enrollment.lead.id)}
+                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                            title="Remove from sequence"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -337,14 +424,82 @@ export default function SequenceBuilderPage({ params }: { params: Promise<{ id: 
           </div>
         )}
 
+        {activeTab === "analytics" && (
+          <div className="space-y-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Total Enrolled</p>
+                <p className="text-2xl font-bold text-slate-900">{stats?.totalEnrolled || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Active</p>
+                <p className="text-2xl font-bold text-teal-600">{stats?.active || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Completed</p>
+                <p className="text-2xl font-bold text-blue-600">{stats?.completed || 0}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Paused (replied)</p>
+                <p className="text-2xl font-bold text-amber-600">{stats?.paused || 0}</p>
+              </div>
+            </div>
+
+            {/* Email Stats */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-900 mb-4">Email Performance</h3>
+              <div className="grid grid-cols-3 gap-6">
+                <div>
+                  <p className="text-sm text-slate-500">Emails Sent</p>
+                  <p className="text-xl font-bold text-slate-900">{stats?.emailsSent || 0}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Open Rate</p>
+                  <p className="text-xl font-bold text-slate-900">{stats?.openRate || 0}%</p>
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Reply Rate</p>
+                  <p className="text-xl font-bold text-slate-900">{stats?.replyRate || 0}%</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Funnel */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-900 mb-4">Enrollment Funnel</h3>
+              <div className="space-y-3">
+                <FunnelBar label="Enrolled" value={stats?.totalEnrolled || 0} max={stats?.totalEnrolled || 1} color="bg-slate-400" />
+                <FunnelBar label="Active" value={stats?.active || 0} max={stats?.totalEnrolled || 1} color="bg-teal-500" />
+                <FunnelBar label="Replied (Paused)" value={stats?.paused || 0} max={stats?.totalEnrolled || 1} color="bg-amber-500" />
+                <FunnelBar label="Completed" value={stats?.completed || 0} max={stats?.totalEnrolled || 1} color="bg-blue-500" />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Add Step Modal */}
         {showAddStep && (
           <AddStepModal
             onClose={() => setShowAddStep(false)}
             onAdd={handleAddStep}
+            templates={templates}
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function FunnelBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const percentage = max > 0 ? (value / max) * 100 : 0;
+  return (
+    <div className="flex items-center gap-4">
+      <span className="text-sm text-slate-600 w-32">{label}</span>
+      <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${percentage}%` }} />
+      </div>
+      <span className="text-sm font-medium text-slate-900 w-12 text-right">{value}</span>
     </div>
   );
 }
@@ -442,9 +597,21 @@ function StepCard({
           )}
 
           {step.type === "condition" && (
-            <p className="font-medium text-slate-900">
-              Check condition
-            </p>
+            <div>
+              <p className="font-medium text-slate-900">Check condition</p>
+              {step.condition && (
+                <p className="text-sm text-slate-500 mt-1">
+                  {(() => {
+                    try {
+                      const cond = JSON.parse(step.condition);
+                      return `If ${cond.field} ${cond.operator.replace("_", " ")} "${cond.value}"`;
+                    } catch {
+                      return "Invalid condition";
+                    }
+                  })()}
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -464,25 +631,47 @@ function StepCard({
 function AddStepModal({
   onClose,
   onAdd,
+  templates,
 }: {
   onClose: () => void;
   onAdd: (step: Partial<SequenceStep>) => void;
+  templates: Template[];
 }) {
-  const [type, setType] = useState<"email" | "wait">("email");
+  const [type, setType] = useState<"email" | "wait" | "condition">("email");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [templateId, setTemplateId] = useState("");
   const [delayDays, setDelayDays] = useState(1);
   const [delayHours, setDelayHours] = useState(0);
+  const [conditionField, setConditionField] = useState("status");
+  const [conditionOperator, setConditionOperator] = useState("equals");
+  const [conditionValue, setConditionValue] = useState("");
   const [adding, setAdding] = useState(false);
+
+  const handleTemplateSelect = (id: string) => {
+    setTemplateId(id);
+    if (id) {
+      const template = templates.find((t) => t.id === id);
+      if (template) {
+        setSubject(template.subject);
+        setBody(template.body);
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdding(true);
 
     if (type === "email") {
-      await onAdd({ type, subject, body });
-    } else {
+      await onAdd({ type, subject, body, templateId: templateId || null });
+    } else if (type === "wait") {
       await onAdd({ type, delayDays, delayHours });
+    } else if (type === "condition") {
+      await onAdd({
+        type,
+        condition: JSON.stringify({ field: conditionField, operator: conditionOperator, value: conditionValue }),
+      });
     }
 
     setAdding(false);
@@ -490,8 +679,8 @@ function AddStepModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+      <div className="bg-white rounded-xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 sticky top-0 bg-white">
           <h2 className="font-semibold text-slate-900">Add Step</h2>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -506,11 +695,11 @@ function AddStepModal({
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Step Type
             </label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setType("email")}
-                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-colors ${
+                className={`py-3 px-2 rounded-lg border-2 transition-colors ${
                   type === "email"
                     ? "border-blue-500 bg-blue-50 text-blue-700"
                     : "border-slate-200 text-slate-600 hover:border-slate-300"
@@ -519,12 +708,12 @@ function AddStepModal({
                 <svg className="w-5 h-5 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-medium">Email</span>
+                <span className="text-xs font-medium">Email</span>
               </button>
               <button
                 type="button"
                 onClick={() => setType("wait")}
-                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-colors ${
+                className={`py-3 px-2 rounded-lg border-2 transition-colors ${
                   type === "wait"
                     ? "border-amber-500 bg-amber-50 text-amber-700"
                     : "border-slate-200 text-slate-600 hover:border-slate-300"
@@ -533,7 +722,21 @@ function AddStepModal({
                 <svg className="w-5 h-5 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-sm font-medium">Wait</span>
+                <span className="text-xs font-medium">Wait</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setType("condition")}
+                className={`py-3 px-2 rounded-lg border-2 transition-colors ${
+                  type === "condition"
+                    ? "border-purple-500 bg-purple-50 text-purple-700"
+                    : "border-slate-200 text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <svg className="w-5 h-5 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-xs font-medium">Condition</span>
               </button>
             </div>
           </div>
@@ -541,6 +744,23 @@ function AddStepModal({
           {/* Email Fields */}
           {type === "email" && (
             <>
+              {templates.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Use Template (optional)
+                  </label>
+                  <select
+                    value={templateId}
+                    onChange={(e) => handleTemplateSelect(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">Write custom email</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Subject
@@ -551,6 +771,7 @@ function AddStepModal({
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Email subject line"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  required
                 />
               </div>
               <div>
@@ -560,10 +781,14 @@ function AddStepModal({
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  placeholder="Email body..."
+                  placeholder="Use {{name}}, {{email}}, {{company}}, {{role}} for personalization"
                   rows={5}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 resize-none"
+                  required
                 />
+                <p className="text-xs text-slate-400 mt-1">
+                  Variables: {"{{name}}"}, {"{{email}}"}, {"{{company}}"}, {"{{role}}"}
+                </p>
               </div>
             </>
           )}
@@ -595,6 +820,70 @@ function AddStepModal({
                   max={23}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Condition Fields */}
+          {type === "condition" && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">
+                Continue sequence only if condition is met. Lead will be exited if condition fails.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Field
+                </label>
+                <select
+                  value={conditionField}
+                  onChange={(e) => setConditionField(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="status">Lead Status</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Operator
+                </label>
+                <select
+                  value={conditionOperator}
+                  onChange={(e) => setConditionOperator(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="equals">Equals</option>
+                  <option value="not_equals">Not Equals</option>
+                  <option value="contains">Contains</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Value
+                </label>
+                {conditionField === "status" ? (
+                  <select
+                    value={conditionValue}
+                    onChange={(e) => setConditionValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    required
+                  >
+                    <option value="">Select status...</option>
+                    <option value="not_contacted">Not Contacted</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="responded">Responded</option>
+                    <option value="follow_up_needed">Follow Up Needed</option>
+                    <option value="not_interested">Not Interested</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={conditionValue}
+                    onChange={(e) => setConditionValue(e.target.value)}
+                    placeholder="Value to compare"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    required
+                  />
+                )}
               </div>
             </div>
           )}
