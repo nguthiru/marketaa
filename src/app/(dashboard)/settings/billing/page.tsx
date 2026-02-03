@@ -65,11 +65,10 @@ export default function BillingPage() {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    // Check for payment callback
-    const success = searchParams.get("success");
+    // Check for payment callback - Paystack appends reference param after redirect
     const reference = searchParams.get("reference") || searchParams.get("trxref");
 
-    if (success === "true" && reference) {
+    if (reference) {
       verifyPayment(reference);
     } else {
       fetchBillingData();

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       amount: selectedPlan.amount,
       reference,
       plan: selectedPlan.code,
-      callback_url: `${process.env.NEXTAUTH_URL}/settings/billing?success=true`,
+      callback_url: `${process.env.NEXTAUTH_URL}/settings/billing`,
       metadata: {
         userId: session.user.id,
         plan: plan,
