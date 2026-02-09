@@ -87,6 +87,12 @@ export async function POST(request: Request) {
     return NextResponse.json(project);
   } catch (error) {
     console.error("Create project error:", error);
+    if (error instanceof Error && error.message.includes("User not found")) {
+      return NextResponse.json(
+        { error: "User not found. Please sign out and sign in again." },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to create project" },
       { status: 500 }

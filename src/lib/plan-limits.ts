@@ -174,6 +174,16 @@ export async function getOrCreateUsageStats(userId: string) {
   });
 
   if (!stats) {
+    // Verify user exists before creating usage stats
+    const userExists = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!userExists) {
+      throw new Error(`User not found. Please sign out and sign in again.`);
+    }
+
     // Count existing resources
     const [projectCount, leadCount, templateCount, sequenceCount] = await Promise.all([
       db.project.count({ where: { ownerId: userId } }),

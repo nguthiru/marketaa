@@ -64,6 +64,12 @@ export async function POST(
     return NextResponse.json(result);
   } catch (error) {
     console.error("Generate error:", error);
+    if (error instanceof Error && error.message.includes("User not found")) {
+      return NextResponse.json(
+        { error: "User not found. Please sign out and sign in again." },
+        { status: 401 }
+      );
+    }
     return NextResponse.json({ error: "Generation failed" }, { status: 500 });
   }
 }

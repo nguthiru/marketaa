@@ -118,6 +118,12 @@ export async function POST(
     return NextResponse.json(lead);
   } catch (error) {
     console.error("Create lead error:", error);
+    if (error instanceof Error && error.message.includes("User not found")) {
+      return NextResponse.json(
+        { error: "User not found. Please sign out and sign in again." },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to create lead" },
       { status: 500 }
