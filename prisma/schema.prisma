@@ -8,7 +8,7 @@ generator client {
 // 2. Update DATABASE_URL in .env
 // 3. Run: npx prisma migrate dev
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
